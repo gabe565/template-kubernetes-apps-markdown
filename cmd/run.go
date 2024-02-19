@@ -23,10 +23,10 @@ var (
 	startTag           = "<!-- Begin apps section -->"
 	endTag             = "<!-- End apps section -->"
 	supportingServices = []string{
-		"borgmatic",
 		"postgresql",
 		"redis",
 		"mariadb",
+		"mongodb",
 	}
 )
 
