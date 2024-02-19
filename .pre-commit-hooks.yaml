@@ -1,0 +1,7 @@
+- id: template
+  name: Template Kubernetes apps markdown
+  entry: template-kubernetes-apps-markdown
+  language: golang
+  pass_filenames: false
+  types:
+    - yaml
