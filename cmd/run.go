@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -27,6 +28,12 @@ var (
 		"redis",
 		"mariadb",
 		"mongodb",
+	}
+	excludedServices = []string{
+		"helm-controller",
+		"kustomize-controller",
+		"notification-controller",
+		"source-controller",
 	}
 )
 
@@ -110,6 +117,8 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				name, _ := metadata["name"].(string)
 
 				switch {
+				case slices.Contains(excludedServices, name):
+					continue
 				case apiVersion == "apps/v1" && kind == "Deployment":
 				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
 				case apiVersion == "postgresql.cnpg.io/v1" && kind == "Cluster":

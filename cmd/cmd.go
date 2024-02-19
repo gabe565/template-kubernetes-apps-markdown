@@ -12,5 +12,6 @@ func New() *cobra.Command {
 	cmd.Flags().StringVar(&startTag, "start-tag", startTag, "Markdown tag that begins replacement")
 	cmd.Flags().StringVar(&endTag, "end-tag", endTag, "Markdown tag that ends replacement")
 	cmd.Flags().StringSliceVar(&supportingServices, "supporting-services", supportingServices, "Comma-separated list of supporting service names")
+	cmd.Flags().StringSliceVar(&excludedServices, "excluded-services", excludedServices, "Comma-separated list of service names to exclude")
 	return cmd
 }
