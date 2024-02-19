@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,7 +28,6 @@ var (
 		"redis",
 		"mariadb",
 	}
-	yamlRe = regexp.MustCompile(`\.ya?ml$`)
 )
 
 //go:embed apps.html.tmpl
@@ -84,7 +82,8 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 			return err
 		}
 
-		if info.IsDir() || !yamlRe.MatchString(path) {
+		ext := filepath.Ext(path)
+		if info.IsDir() || (ext != ".yaml" && ext != ".yml") {
 			return nil
 		}
 
