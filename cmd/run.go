@@ -110,6 +110,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				name, _ := metadata["name"].(string)
 
 				switch {
+				case apiVersion == "apps/v1" && kind == "Deployment":
 				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
 				case apiVersion == "postgresql.cnpg.io/v1" && kind == "Cluster":
 				default:
