@@ -20,7 +20,7 @@ import (
 
 var (
 	file               = "README.md"
-	root               = "kubernetes/apps"
+	dirs               = []string{"kubernetes/apps"}
 	startTag           = "<!-- Begin apps section -->"
 	endTag             = "<!-- End apps section -->"
 	supportingServices = []string{
@@ -55,7 +55,12 @@ func run(cmd *cobra.Command, args []string) error {
 
 	group.Go(func() error {
 		defer close(matchCh)
-		return filepath.Walk(root, walkFunc(matchCh))
+		for _, dir := range dirs {
+			if err := filepath.Walk(dir, walkFunc(matchCh)); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 
 	group.Go(func() error {
