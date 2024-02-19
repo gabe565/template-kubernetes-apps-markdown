@@ -171,7 +171,7 @@ func prepareMatches(matches chan Match) map[string]Namespace {
 }
 
 func templateOutput(clusters map[string]Namespace) error {
-	tmpl, err := template.New("").Parse(appsTemplate)
+	tmpl, err := template.New("").Funcs(funcMap()).Parse(appsTemplate)
 	if err != nil {
 		return err
 	}

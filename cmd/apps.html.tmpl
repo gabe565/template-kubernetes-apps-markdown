@@ -8,13 +8,12 @@
   {{- $isFirstRow := true }}
   {{- range .Services }}
   <tr>
-    {{- $rowspan := len $namespace.Services }}
     {{- if $isFirstRow }}
-    <td rowspan="{{ $rowspan }}">{{ $namespace.Name }}</td>
+    <td {{- rowspan (len $namespace.Services) }}>{{ $namespace.Name }}</td>
     {{- end }}
     <td><a href="{{ .Path }}">{{ .Name }}</a></td>
     {{- if $isFirstRow }}
-    <td rowspan="{{ $rowspan }}">
+    <td {{- rowspan (len $namespace.Services) }}>
       {{- $isFirstService := true }}
       {{- range $k, $supporting := $namespace.Supporting -}}
         {{- if not $isFirstService }}, {{ end }}<a href="{{ .Path }}">{{ .Name }}</a>
