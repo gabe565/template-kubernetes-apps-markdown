@@ -19,7 +19,7 @@ import (
 
 var (
 	file               = "README.md"
-	dirs               = []string{"kubernetes/apps"}
+	dirs               = []string{"."}
 	startTag           = "<!-- Begin apps section -->"
 	endTag             = "<!-- End apps section -->"
 	supportingServices = []string{
