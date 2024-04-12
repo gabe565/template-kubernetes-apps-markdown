@@ -43,6 +43,19 @@
     {{- end }}
   </tr>
   {{- $isFirstRow = false }}
+  {{- else }}
+  <tr>
+    <td>{{ $namespace.Name }}</td>
+    <td></td>
+    <td></td>
+    <td>
+      {{- $isFirstService := true }}
+      {{- range $k, $supporting := $namespace.Supporting -}}
+        {{- if not $isFirstService }}, {{ end }}<a href="{{ .Path }}">{{ .Name }}</a>
+        {{- $isFirstService = false }}
+      {{- end -}}
+    </td>
+  </tr>
   {{- end }}
   {{- end }}
 </table>
