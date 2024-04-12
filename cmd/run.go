@@ -47,6 +47,7 @@ type Namespace struct {
 }
 
 type Match struct {
+	Kind      string
 	Path      string
 	Name      string
 	Namespace string
@@ -130,6 +131,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				path = filepath.Join(outputPathPrefix, path)
 
 				matchCh <- Match{
+					Kind:      kind,
 					Path:      path,
 					Name:      name,
 					Namespace: namespace,

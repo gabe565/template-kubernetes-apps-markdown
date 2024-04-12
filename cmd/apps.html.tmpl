@@ -1,6 +1,7 @@
 <table>
   <tr>
     <th>Namespace</th>
+    <th>Kind</th>
     <th>Name</th>
     <th>Supporting Services</th>
   </tr>
@@ -11,6 +12,7 @@
     {{- if $isFirstRow }}
     <td {{- rowspan (len $namespace.Services) }}>{{ $namespace.Name }}</td>
     {{- end }}
+    <td><code>{{ .Kind }}</code></td>
     <td><a href="{{ .Path }}">{{ .Name }}</a></td>
     {{- if $isFirstRow }}
     <td {{- rowspan (len $namespace.Services) }}>
