@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -21,6 +22,8 @@ import (
 var (
 	file               = "README.md"
 	dirs               = []string{"."}
+	pathMatcher        string
+	pathMatcherRe      *regexp.Regexp
 	startTag           = "<!-- Begin apps section -->"
 	endTag             = "<!-- End apps section -->"
 	supportingServices = []string{
@@ -40,6 +43,11 @@ var (
 //go:embed apps.html.tmpl
 var appsTemplate string
 
+type Cluster struct {
+	Name       string
+	Namespaces map[string]Namespace
+}
+
 type Namespace struct {
 	Name       string
 	Services   map[string]Match
@@ -50,11 +58,19 @@ type Match struct {
 	Kind      string
 	Path      string
 	Name      string
+	Cluster   string
 	Namespace string
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	var namespaces map[string]Namespace
+	if pathMatcher != "" {
+		var err error
+		if pathMatcherRe, err = regexp.Compile(pathMatcher); err != nil {
+			return err
+		}
+	}
+
+	var clusters map[string]Cluster
 
 	var group errgroup.Group
 	matchCh := make(chan Match)
@@ -70,7 +86,7 @@ func run(cmd *cobra.Command, args []string) error {
 	})
 
 	group.Go(func() error {
-		namespaces = prepareMatches(matchCh)
+		clusters = prepareMatches(matchCh)
 		return nil
 	})
 
@@ -78,7 +94,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return templateOutput(namespaces)
+	return templateOutput(clusters)
 }
 
 func walkFunc(matchCh chan Match) filepath.WalkFunc {
@@ -129,6 +145,26 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				}
 
 				namespace, _ := metadata["namespace"].(string)
+				var cluster string
+
+				if pathMatcherRe != nil {
+					matches := pathMatcherRe.FindStringSubmatch(path)
+					for i, group := range pathMatcherRe.SubexpNames() {
+						if i == 0 || len(matches)-1 < i {
+							continue
+						}
+
+						switch group {
+						case "cluster":
+							cluster = matches[i]
+						case "namespace":
+							namespace = matches[i]
+						case "name":
+							name = matches[i]
+						}
+					}
+				}
+
 				if kind == "GitRepository" {
 					if spec, ok := data["spec"].(map[string]any); ok {
 						if path, ok = spec["url"].(string); ok {
@@ -151,6 +187,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 					Kind:      kind,
 					Path:      path,
 					Name:      name,
+					Cluster:   cluster,
 					Namespace: namespace,
 				}
 			}
@@ -158,38 +195,40 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 	}
 }
 
-func prepareMatches(matches chan Match) map[string]Namespace {
-	namespaces := make(map[string]Namespace)
+func prepareMatches(matches chan Match) map[string]Cluster {
+	clusters := make(map[string]Cluster)
 
 	for service := range matches {
-		namespace, ok := namespaces[service.Namespace]
+		cluster, ok := clusters[service.Cluster]
+		if !ok {
+			cluster = Cluster{
+				Name:       service.Cluster,
+				Namespaces: make(map[string]Namespace),
+			}
+			clusters[cluster.Name] = cluster
+		}
+
+		namespace, ok := cluster.Namespaces[service.Namespace]
 		if !ok {
 			namespace = Namespace{
 				Name:       service.Namespace,
 				Services:   make(map[string]Match),
 				Supporting: make(map[string]Match),
 			}
-			namespaces[namespace.Name] = namespace
+			cluster.Namespaces[namespace.Name] = namespace
 		}
 
-		var supportingService bool
-		for _, supportingName := range supportingServices {
-			if service.Name == supportingName {
-				supportingService = true
-				break
-			}
-		}
-		if supportingService {
+		if slices.Contains(supportingServices, service.Name) {
 			namespace.Supporting[service.Name] = service
 		} else {
 			namespace.Services[service.Name] = service
 		}
 	}
 
-	return namespaces
+	return clusters
 }
 
-func templateOutput(clusters map[string]Namespace) error {
+func templateOutput(clusters map[string]Cluster) error {
 	tmpl, err := template.New("").Funcs(funcMap()).Parse(appsTemplate)
 	if err != nil {
 		return err

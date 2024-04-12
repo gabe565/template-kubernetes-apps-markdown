@@ -1,3 +1,21 @@
+{{- $multipleClusters := gt (len .) 1 }}
+{{- if $multipleClusters -}}
+<h3>Clusters</h3>
+<ul>
+  {{- range . }}
+  <li><a href="#{{ .Name }}">{{ .Name }}</a></li>
+  {{- end }}
+</ul>
+
+<h3>Apps</h2>
+{{- end -}}
+
+{{- range $cluster := . }}
+{{- if $multipleClusters }}
+
+<h4>{{ .Name }}</h2>
+{{ end -}}
+
 <table>
   <tr>
     <th>Namespace</th>
@@ -5,7 +23,7 @@
     <th>Name</th>
     <th>Supporting Services</th>
   </tr>
-  {{- range $namespace := . }}
+  {{- range $namespace := .Namespaces }}
   {{- $isFirstRow := true }}
   {{- range .Services }}
   <tr>
@@ -28,3 +46,4 @@
   {{- end }}
   {{- end }}
 </table>
+{{- end }}
