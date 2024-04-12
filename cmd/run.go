@@ -122,13 +122,30 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 					continue
 				case apiVersion == "apps/v1" && kind == "Deployment":
 				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
+				case strings.HasPrefix(apiVersion, "source.toolkit.fluxcd.io") && kind == "GitRepository" && name != "flux-system":
 				case apiVersion == "postgresql.cnpg.io/v1" && kind == "Cluster":
 				default:
 					continue
 				}
 
 				namespace, _ := metadata["namespace"].(string)
-				path = filepath.Join(outputPathPrefix, path)
+				if kind == "GitRepository" {
+					if spec, ok := data["spec"].(map[string]any); ok {
+						if path, ok = spec["url"].(string); ok {
+							path = strings.TrimSuffix(path, ".git")
+							if strings.HasPrefix(path, "ssh://git@") {
+								path = strings.TrimPrefix(path, "ssh://git@")
+								path = "https://" + path
+							}
+						} else {
+							continue
+						}
+					} else {
+						continue
+					}
+				} else {
+					path = filepath.Join(outputPathPrefix, path)
+				}
 
 				matchCh <- Match{
 					Kind:      kind,
