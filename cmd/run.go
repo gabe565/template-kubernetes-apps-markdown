@@ -38,6 +38,7 @@ var (
 		"notification-controller",
 		"source-controller",
 	}
+	excludeHidden bool
 )
 
 //go:embed apps.html.tmpl
@@ -104,6 +105,10 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 	return func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		if excludeHidden && strings.Contains(path, string(filepath.Separator)+".") {
+			return nil
 		}
 
 		ext := filepath.Ext(path)
