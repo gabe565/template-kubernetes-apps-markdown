@@ -3,7 +3,7 @@ module github.com/gabe565/template-kubernetes-apps-markdown
 go 1.22.4
 
 require (
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.8.1
 	golang.org/x/sync v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
