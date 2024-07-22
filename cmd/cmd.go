@@ -11,6 +11,8 @@ func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:  "template-kubernetes-apps-markdown",
 		RunE: run,
+
+		DisableAutoGenTag: true,
 	}
 	conf := config.New()
 	conf.RegisterFlags(cmd.Flags())
