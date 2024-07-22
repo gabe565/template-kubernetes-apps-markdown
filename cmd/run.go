@@ -10,35 +10,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/gabe565/template-kubernetes-apps-markdown/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
-)
-
-var (
-	file               = "README.md"
-	dirs               = []string{"."}
-	pathMatcher        string
-	pathMatcherRe      *regexp.Regexp
-	startTag           = "<!-- Begin apps section -->"
-	endTag             = "<!-- End apps section -->"
-	supportingServices = []string{
-		"postgresql",
-		"redis",
-		"mariadb",
-		"mongodb",
-	}
-	excludedServices = []string{
-		"helm-controller",
-		"kustomize-controller",
-		"notification-controller",
-		"source-controller",
-	}
-	excludeHidden bool
 )
 
 //go:embed apps.html.tmpl
@@ -64,11 +42,13 @@ type Match struct {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	if pathMatcher != "" {
-		var err error
-		if pathMatcherRe, err = regexp.Compile(pathMatcher); err != nil {
-			return err
-		}
+	conf, ok := config.FromContext(cmd.Context())
+	if !ok {
+		panic("command missing config")
+	}
+
+	if err := conf.Load(); err != nil {
+		return err
 	}
 
 	var clusters map[string]Cluster
@@ -78,8 +58,8 @@ func run(cmd *cobra.Command, args []string) error {
 
 	group.Go(func() error {
 		defer close(matchCh)
-		for _, dir := range dirs {
-			if err := filepath.Walk(dir, walkFunc(matchCh)); err != nil {
+		for _, dir := range conf.Dirs {
+			if err := filepath.Walk(dir, walkFunc(conf, matchCh)); err != nil {
 				return err
 			}
 		}
@@ -87,7 +67,7 @@ func run(cmd *cobra.Command, args []string) error {
 	})
 
 	group.Go(func() error {
-		clusters = prepareMatches(matchCh)
+		clusters = prepareMatches(conf, matchCh)
 		return nil
 	})
 
@@ -95,11 +75,11 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return templateOutput(clusters)
+	return templateOutput(conf, clusters)
 }
 
-func walkFunc(matchCh chan Match) filepath.WalkFunc {
-	outputSubdirCount := strings.Count(file, string(os.PathSeparator))
+func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc {
+	outputSubdirCount := strings.Count(conf.File, string(os.PathSeparator))
 	outputPathPrefix := strings.Repeat(".."+string(os.PathSeparator), outputSubdirCount)
 
 	return func(path string, info fs.FileInfo, err error) error {
@@ -107,7 +87,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 			return err
 		}
 
-		if excludeHidden && strings.Contains(path, string(filepath.Separator)+".") {
+		if conf.ExcludeHidden && strings.Contains(path, string(filepath.Separator)+".") {
 			return nil
 		}
 
@@ -139,7 +119,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				name, _ := metadata["name"].(string)
 
 				switch {
-				case slices.Contains(excludedServices, name):
+				case slices.Contains(conf.ExcludedServices, name):
 					continue
 				case apiVersion == "apps/v1" && kind == "Deployment":
 				case apiVersion == "apps/v1" && kind == "StatefulSet":
@@ -155,9 +135,9 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				namespace, _ := metadata["namespace"].(string)
 				var cluster string
 
-				if pathMatcherRe != nil {
-					matches := pathMatcherRe.FindStringSubmatch(path)
-					for i, group := range pathMatcherRe.SubexpNames() {
+				if conf.PathMatcherRe != nil {
+					matches := conf.PathMatcherRe.FindStringSubmatch(path)
+					for i, group := range conf.PathMatcherRe.SubexpNames() {
 						if i == 0 || len(matches)-1 < i {
 							continue
 						}
@@ -203,7 +183,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 	}
 }
 
-func prepareMatches(matches chan Match) map[string]Cluster {
+func prepareMatches(conf *config.Config, matches chan Match) map[string]Cluster {
 	clusters := make(map[string]Cluster)
 
 	for service := range matches {
@@ -226,7 +206,7 @@ func prepareMatches(matches chan Match) map[string]Cluster {
 			cluster.Namespaces[namespace.Name] = namespace
 		}
 
-		if slices.Contains(supportingServices, service.Name) {
+		if slices.Contains(conf.SupportingServices, service.Name) {
 			namespace.Supporting[service.Name] = service
 		} else {
 			namespace.Services[service.Name] = service
@@ -236,35 +216,35 @@ func prepareMatches(matches chan Match) map[string]Cluster {
 	return clusters
 }
 
-func templateOutput(clusters map[string]Cluster) error {
+func templateOutput(conf *config.Config, clusters map[string]Cluster) error {
 	tmpl, err := template.New("").Funcs(funcMap()).Parse(appsTemplate)
 	if err != nil {
 		return err
 	}
 
-	src, err := os.ReadFile(file)
+	src, err := os.ReadFile(conf.File)
 	if err != nil {
 		return err
 	}
 
-	startIdx := bytes.Index(src, []byte(startTag))
+	startIdx := bytes.Index(src, []byte(conf.StartTag))
 	if startIdx == -1 {
-		return fmt.Errorf("no start tag %q in %q", startTag, file)
+		return fmt.Errorf("no start tag %q in %q", conf.StartTag, conf.File)
 	}
 
-	endIdx := bytes.Index(src, []byte(endTag))
+	endIdx := bytes.Index(src, []byte(conf.EndTag))
 	if endIdx == -1 {
-		return fmt.Errorf("no end tag %q in %q", endTag, file)
+		return fmt.Errorf("no end tag %q in %q", conf.EndTag, conf.File)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, endIdx-startIdx))
-	buf.Write(src[:startIdx+len(startTag)+1])
+	buf.Write(src[:startIdx+len(conf.StartTag)+1])
 	if err := tmpl.Execute(buf, clusters); err != nil {
 		return err
 	}
 	buf.Write(src[endIdx:])
 
-	if err := os.WriteFile(file, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(conf.File, buf.Bytes(), 0o644); err != nil {
 		return err
 	}
 
