@@ -41,7 +41,7 @@ type Match struct {
 	Namespace string
 }
 
-func run(cmd *cobra.Command, args []string) error {
+func run(cmd *cobra.Command, _ []string) error {
 	conf, ok := config.FromContext(cmd.Context())
 	if !ok {
 		panic("command missing config")
@@ -78,7 +78,7 @@ func run(cmd *cobra.Command, args []string) error {
 	return templateOutput(conf, clusters)
 }
 
-func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc {
+func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc { //nolint:gocyclo
 	outputSubdirCount := strings.Count(conf.File, string(os.PathSeparator))
 	outputPathPrefix := strings.Repeat(".."+string(os.PathSeparator), outputSubdirCount)
 
@@ -118,12 +118,14 @@ func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc {
 				metadata, _ := data["metadata"].(map[string]any)
 				name, _ := metadata["name"].(string)
 
+				const Appsv1 = "apps/v1"
+
 				switch {
 				case slices.Contains(conf.ExcludedServices, name):
 					continue
-				case apiVersion == "apps/v1" && kind == "Deployment":
-				case apiVersion == "apps/v1" && kind == "StatefulSet":
-				case apiVersion == "apps/v1" && kind == "DaemonSet":
+				case apiVersion == Appsv1 && kind == "Deployment":
+				case apiVersion == Appsv1 && kind == "StatefulSet":
+				case apiVersion == Appsv1 && kind == "DaemonSet":
 				case apiVersion == "batch/v1" && kind == "CronJob":
 				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
 				case strings.HasPrefix(apiVersion, "source.toolkit.fluxcd.io") && kind == "GitRepository" && name != "flux-system":
@@ -216,6 +218,11 @@ func prepareMatches(conf *config.Config, matches chan Match) map[string]Cluster 
 	return clusters
 }
 
+var (
+	ErrNoStartTag = errors.New("no start tag found")
+	ErrNoEndTag   = errors.New("no end tag found")
+)
+
 func templateOutput(conf *config.Config, clusters map[string]Cluster) error {
 	tmpl, err := template.New("").Funcs(funcMap()).Parse(appsTemplate)
 	if err != nil {
@@ -229,12 +236,12 @@ func templateOutput(conf *config.Config, clusters map[string]Cluster) error {
 
 	startIdx := bytes.Index(src, []byte(conf.StartTag))
 	if startIdx == -1 {
-		return fmt.Errorf("no start tag %q in %q", conf.StartTag, conf.File)
+		return fmt.Errorf("%w: %q in %q", ErrNoStartTag, conf.StartTag, conf.File)
 	}
 
 	endIdx := bytes.Index(src, []byte(conf.EndTag))
 	if endIdx == -1 {
-		return fmt.Errorf("no end tag %q in %q", conf.EndTag, conf.File)
+		return fmt.Errorf("%w: %q in %q", ErrNoEndTag, conf.EndTag, conf.File)
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, endIdx-startIdx))

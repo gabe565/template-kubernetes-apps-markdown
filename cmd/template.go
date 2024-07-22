@@ -15,5 +15,5 @@ func rowspan(n int) template.HTMLAttr {
 	if n == 1 {
 		return ""
 	}
-	return template.HTMLAttr(` rowspan="` + strconv.Itoa(n) + `"`)
+	return template.HTMLAttr(` rowspan="` + strconv.Itoa(n) + `"`) //nolint:gosec
 }
