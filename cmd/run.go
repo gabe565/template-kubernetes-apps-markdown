@@ -142,6 +142,7 @@ func walkFunc(matchCh chan Match) filepath.WalkFunc {
 				case slices.Contains(excludedServices, name):
 					continue
 				case apiVersion == "apps/v1" && kind == "Deployment":
+				case apiVersion == "apps/v1" && kind == "StatefulSet":
 				case apiVersion == "batch/v1" && kind == "CronJob":
 				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
 				case strings.HasPrefix(apiVersion, "source.toolkit.fluxcd.io") && kind == "GitRepository" && name != "flux-system":
