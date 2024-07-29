@@ -59,7 +59,7 @@ func run(cmd *cobra.Command, _ []string) error {
 	group.Go(func() error {
 		defer close(matchCh)
 		for _, dir := range conf.Dirs {
-			if err := filepath.Walk(dir, walkFunc(conf, matchCh)); err != nil {
+			if err := filepath.WalkDir(dir, walkDirFunc(conf, matchCh)); err != nil {
 				return err
 			}
 		}
@@ -78,11 +78,11 @@ func run(cmd *cobra.Command, _ []string) error {
 	return templateOutput(conf, clusters)
 }
 
-func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc { //nolint:gocyclo
+func walkDirFunc(conf *config.Config, matchCh chan Match) fs.WalkDirFunc { //nolint:gocyclo
 	outputSubdirCount := strings.Count(conf.File, string(os.PathSeparator))
 	outputPathPrefix := strings.Repeat(".."+string(os.PathSeparator), outputSubdirCount)
 
-	return func(path string, info fs.FileInfo, err error) error {
+	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ func walkFunc(conf *config.Config, matchCh chan Match) filepath.WalkFunc { //nol
 		}
 
 		ext := filepath.Ext(path)
-		if info.IsDir() || (ext != ".yaml" && ext != ".yml") {
+		if d.IsDir() || (ext != ".yaml" && ext != ".yml") {
 			return nil
 		}
 
