@@ -12,6 +12,7 @@ type Config struct {
 	SupportingServices []string
 	ExcludedServices   []string
 	ExcludeHidden      bool
+	IgnorePaths        []string
 }
 
 func New() *Config {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,7 +16,6 @@ import (
 	"github.com/gabe565/template-kubernetes-apps-markdown/internal/util"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed apps.html.tmpl
@@ -60,7 +58,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	group.Go(func() error {
 		defer close(matchCh)
 		for _, dir := range conf.Dirs {
-			if err := filepath.WalkDir(dir, walkDirFunc(conf, matchCh)); err != nil {
+			if err := filepath.WalkDir(dir, walkKustomizations(conf, matchCh)); err != nil {
+				return err
+			}
+		}
+		for _, dir := range conf.Dirs {
+			if err := filepath.WalkDir(dir, walkDirs(conf, matchCh)); err != nil {
 				return err
 			}
 		}
@@ -79,10 +82,77 @@ func run(cmd *cobra.Command, _ []string) error {
 	return templateOutput(conf, clusters)
 }
 
-func walkDirFunc(conf *config.Config, matchCh chan Match) fs.WalkDirFunc { //nolint:gocyclo
-	outputSubdirCount := strings.Count(conf.File, string(os.PathSeparator))
-	outputPathPrefix := strings.Repeat(".."+string(os.PathSeparator), outputSubdirCount)
+func walkKustomizations(conf *config.Config, matchCh chan Match) fs.WalkDirFunc {
+	return func(path string, _ fs.DirEntry, err error) error {
+		if err != nil || filepath.Base(path) != "kustomization.yaml" {
+			return err
+		}
 
+		if conf.ExcludeHidden && strings.Contains(path, string(filepath.Separator)+".") {
+			return nil
+		}
+
+		docs, err := util.DecodeAll(path)
+		if err != nil {
+			return fmt.Errorf("unmarshal failed for %q: %w", path, err)
+		}
+
+		for _, data := range docs {
+			if data, ok := data.(map[string]any); ok {
+				apiVersion, _ := data["apiVersion"].(string)
+				kind, _ := data["kind"].(string)
+				if !strings.HasPrefix(apiVersion, "kustomize.config.k8s.io") || kind != "Kustomization" {
+					return nil
+				}
+
+				cluster, namespace, name := util.MatchPaths(conf, path)
+				if namespace == "" {
+					namespace, _ = data["namespace"].(string)
+				}
+
+				if resources, ok := data["resources"].([]any); ok {
+					for _, resource := range resources {
+						resourcePath, ok := resource.(string)
+						if !ok {
+							continue
+						}
+						path := filepath.Join(filepath.Dir(path), resourcePath)
+
+						stat, err := os.Stat(path)
+						if err != nil {
+							if errors.Is(err, os.ErrNotExist) {
+								continue
+							}
+							return err
+						}
+						if stat.IsDir() {
+							continue
+						}
+
+						matches, err := getMatches(conf, Match{
+							Path:      path,
+							Name:      name,
+							Cluster:   cluster,
+							Namespace: namespace,
+						})
+						if err != nil {
+							return fmt.Errorf("failed to get matches for %q: %w", path, err)
+						}
+
+						for _, match := range matches {
+							matchCh <- match
+						}
+
+						conf.IgnorePaths = append(conf.IgnorePaths, path)
+					}
+				}
+			}
+		}
+		return nil
+	}
+}
+
+func walkDirs(conf *config.Config, matchCh chan Match) fs.WalkDirFunc {
 	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !util.IsYAMLPath(path) {
 			return err
@@ -92,93 +162,93 @@ func walkDirFunc(conf *config.Config, matchCh chan Match) fs.WalkDirFunc { //nol
 			return nil
 		}
 
-		f, err := os.Open(path)
+		if slices.Contains(conf.IgnorePaths, path) {
+			return nil
+		}
+
+		matches, err := getMatches(conf, Match{Path: path})
 		if err != nil {
 			return err
 		}
-		defer f.Close()
 
-		decoder := yaml.NewDecoder(f)
-		for {
-			var data any
-			if err := decoder.Decode(&data); err != nil {
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
-				return fmt.Errorf("unmarshal failed for %q: %w", path, err)
-			}
+		for _, match := range matches {
+			matchCh <- match
+		}
+		return nil
+	}
+}
 
-			if data, ok := data.(map[string]any); ok {
-				apiVersion, _ := data["apiVersion"].(string)
-				kind, _ := data["kind"].(string)
-				metadata, _ := data["metadata"].(map[string]any)
-				name, _ := metadata["name"].(string)
+func getMatches(conf *config.Config, match Match) ([]Match, error) {
+	docs, err := util.DecodeAll(match.Path)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal failed for %q: %w", match.Path, err)
+	}
 
-				const Appsv1 = "apps/v1"
+	matches := make([]Match, 0, len(docs))
+	for _, data := range docs {
+		data, ok := data.(map[string]any)
+		if !ok {
+			continue
+		}
 
-				switch {
-				case slices.Contains(conf.ExcludedServices, name):
-					continue
-				case apiVersion == Appsv1 && kind == "Deployment":
-				case apiVersion == Appsv1 && kind == "StatefulSet":
-				case apiVersion == Appsv1 && kind == "DaemonSet":
-				case apiVersion == "batch/v1" && kind == "CronJob":
-				case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && kind == "HelmRelease":
-				case strings.HasPrefix(apiVersion, "source.toolkit.fluxcd.io") && kind == "GitRepository" && name != "flux-system":
-				case apiVersion == "postgresql.cnpg.io/v1" && kind == "Cluster":
-				default:
-					continue
-				}
+		m := match
+		apiVersion, _ := data["apiVersion"].(string)
+		m.Kind, _ = data["kind"].(string)
+		metadata, _ := data["metadata"].(map[string]any)
+		name, _ := metadata["name"].(string)
 
-				namespace, _ := metadata["namespace"].(string)
-				var cluster string
+		const Appsv1 = "apps/v1"
 
-				if conf.PathMatcherRe != nil {
-					matches := conf.PathMatcherRe.FindStringSubmatch(path)
-					for i, group := range conf.PathMatcherRe.SubexpNames() {
-						if i == 0 || len(matches)-1 < i {
-							continue
-						}
+		switch {
+		case slices.Contains(conf.ExcludedServices, name):
+			continue
+		case apiVersion == Appsv1 && m.Kind == "Deployment":
+		case apiVersion == Appsv1 && m.Kind == "StatefulSet":
+		case apiVersion == Appsv1 && m.Kind == "DaemonSet":
+		case apiVersion == "batch/v1" && m.Kind == "CronJob":
+		case strings.HasPrefix(apiVersion, "helm.toolkit.fluxcd.io") && m.Kind == "HelmRelease":
+		case strings.HasPrefix(apiVersion, "source.toolkit.fluxcd.io") && m.Kind == "GitRepository" && name != "flux-system":
+		case apiVersion == "postgresql.cnpg.io/v1" && m.Kind == "Cluster":
+		default:
+			continue
+		}
 
-						switch group {
-						case "cluster":
-							cluster = matches[i]
-						case "namespace":
-							namespace = matches[i]
-						case "name":
-							name = matches[i]
-						}
-					}
-				}
-
-				if kind == "GitRepository" {
-					if spec, ok := data["spec"].(map[string]any); ok {
-						if path, ok = spec["url"].(string); ok {
-							path = strings.TrimSuffix(path, ".git")
-							if strings.HasPrefix(path, "ssh://git@") {
-								path = strings.TrimPrefix(path, "ssh://git@")
-								path = "https://" + path
-							}
-						} else {
-							continue
-						}
-					} else {
-						continue
-					}
-				} else {
-					path = filepath.Join(outputPathPrefix, path)
-				}
-
-				matchCh <- Match{
-					Kind:      kind,
-					Path:      path,
-					Name:      name,
-					Cluster:   cluster,
-					Namespace: namespace,
-				}
+		matchedCluster, matchedNamespace, matchedName := util.MatchPaths(conf, m.Path)
+		if m.Cluster == "" {
+			m.Cluster = matchedCluster
+		}
+		if m.Namespace == "" {
+			m.Namespace = matchedNamespace
+			if m.Namespace == "" {
+				m.Namespace, _ = metadata["namespace"].(string)
 			}
 		}
+		if m.Name == "" {
+			m.Name = matchedName
+			if m.Name == "" {
+				m.Name = name
+			}
+		}
+
+		if m.Kind == "GitRepository" {
+			if spec, ok := data["spec"].(map[string]any); ok {
+				if m.Path, ok = spec["url"].(string); ok {
+					m.Path = strings.TrimSuffix(m.Path, ".git")
+					if strings.HasPrefix(m.Path, "ssh://git@") {
+						m.Path = strings.TrimPrefix(m.Path, "ssh://git@")
+						m.Path = "https://" + m.Path
+					}
+				} else {
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		matches = append(matches, m)
 	}
+	return matches, nil
 }
 
 func prepareMatches(conf *config.Config, matches chan Match) map[string]Cluster {
