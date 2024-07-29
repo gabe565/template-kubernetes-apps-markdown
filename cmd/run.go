@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/gabe565/template-kubernetes-apps-markdown/internal/config"
+	"github.com/gabe565/template-kubernetes-apps-markdown/internal/util"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
@@ -83,16 +84,11 @@ func walkDirFunc(conf *config.Config, matchCh chan Match) fs.WalkDirFunc { //nol
 	outputPathPrefix := strings.Repeat(".."+string(os.PathSeparator), outputSubdirCount)
 
 	return func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+		if err != nil || d.IsDir() || !util.IsYAMLPath(path) {
 			return err
 		}
 
 		if conf.ExcludeHidden && strings.Contains(path, string(filepath.Separator)+".") {
-			return nil
-		}
-
-		ext := filepath.Ext(path)
-		if d.IsDir() || (ext != ".yaml" && ext != ".yml") {
 			return nil
 		}
 
