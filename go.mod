@@ -1,6 +1,6 @@
 module github.com/gabe565/template-kubernetes-apps-markdown
 
-go 1.22.5
+go 1.22.6
 
 require (
 	github.com/spf13/cobra v1.8.1
