@@ -178,7 +178,7 @@ func walkDirs(conf *config.Config, matchCh chan Match) fs.WalkDirFunc {
 	}
 }
 
-func getMatches(conf *config.Config, match Match) ([]Match, error) {
+func getMatches(conf *config.Config, match Match) ([]Match, error) { //nolint:gocyclo
 	docs, err := util.DecodeAll(match.Path)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal failed for %q: %w", match.Path, err)
@@ -243,6 +243,14 @@ func getMatches(conf *config.Config, match Match) ([]Match, error) {
 				}
 			} else {
 				continue
+			}
+		} else {
+			if dir := filepath.Dir(conf.File); dir != "" {
+				var err error
+				m.Path, err = filepath.Rel(dir, m.Path)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
