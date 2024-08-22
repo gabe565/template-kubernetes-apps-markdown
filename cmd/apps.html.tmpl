@@ -3,7 +3,9 @@
 <h3>Clusters</h3>
 <ul>
   {{- range . }}
+  {{- if .Name }}
   <li><a href="#{{ .Name }}">{{ .Name }}</a></li>
+  {{- end }}
   {{- end }}
 </ul>
 
